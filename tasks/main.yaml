@@ -1,0 +1,71 @@
+---
+- name: create temp directory
+  file:
+    dest: "{{ wsdd_download_dir }}"
+    state: directory
+
+- block:
+  - name: set request version
+    set_fact:
+      wsdd_version: HEAD
+  when: wsdd_version == "latest"
+
+- name: clone repo
+  git:
+    repo: "{{ wsdd_github_url }}"
+    dest: "{{ wsdd_download_dir }}"
+    version: "{{ wsdd_version }}"
+    update: yes
+    force: yes
+
+- name: copy wsdd.py
+  copy:
+    src: "{{ wsdd_download_dir }}/src/wsdd.py"
+    dest: /usr/bin/wsdd
+    remote_src: yes
+    mode: '0755'
+  become: true
+
+- name: update systemd definition group
+  lineinfile:
+    path: "{{ wsdd_download_dir }}/etc/systemd/wsdd.service"
+    regexp: '^Group=nobody'
+    line: Group=nogroup
+
+- name: update systemd definition command line
+  lineinfile:
+    path: "{{ wsdd_download_dir }}/etc/systemd/wsdd.service"
+    regexp: '^ExecStart'
+    line: "ExecStart=/usr/bin/wsdd --workgroup {{ wsdd_workgroup }} --shortlog"
+
+- name: copy systemd definition
+  copy:
+    src: "{{ wsdd_download_dir }}/etc/systemd/wsdd.service"
+    dest: /etc/systemd/system/wsdd.service
+    remote_src: yes
+  become: true
+
+# - name: create ufw definition
+#   template:
+#     src: ufw.j2
+#     dest: /etc/ufw/applications.d/wsdd
+#   become: true
+
+# - name: allow firewall
+#   community.general.ufw:
+#     rule: allow
+#     name: wsdd
+#   become: true
+
+- name: start wsdd service
+  systemd:
+    name: wsdd
+    enabled: yes
+    daemon_reload: yes
+    state: restarted
+  become: true
+
+- name: remove temp directory
+  file:
+    dest: "{{ wsdd_download_dir }}"
+    state: absent
